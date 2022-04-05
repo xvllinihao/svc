@@ -1,5 +1,5 @@
 use std::fmt::Error;
-use std::ops::{Add, Sub};
+use std::ops::{Add, Neg, Sub};
 use bls12_381::{G1Affine, G1Projective, G2Affine, G2Projective, Gt, pairing, Scalar};
 use rand::prelude::*;
 use sha3::{Digest, Sha3_256};
@@ -14,7 +14,7 @@ pub fn random_scalar(mut rng: &mut ThreadRng) -> Scalar {
 }
 
 pub(crate) struct ZkpProof {
-    c:G1Projective,
+    cr:G1Projective,
     w1: G1Projective,
     w2: G1Projective,
     w1_r: G1Projective,
@@ -125,7 +125,7 @@ impl AccNa {
 
 
         let o_com = random_scalar(&mut rng);
-        let c = (commiter.g * r1).add(&(&commiter.h * r2));
+        let cr = (commiter.g * x).add(&(&commiter.h * o_com));
         let w2 = wx.add(&(commiter.g * r1));
 
         //generate blinding values
@@ -142,7 +142,7 @@ impl AccNa {
             let R2 = (commiter.g * blind_delta1).add(&(&commiter.h * blind_delta2));
 
             let blind_x = random_scalar(&mut rng);
-            let R3 = (pairing(&G1Affine::from(w2), g2) * blind_x)
+            let R3 = (pairing(&G1Affine::from(w2), g2) * blind_x.neg())
                 .add(pairing(&commiter.g, g2) * blind_delta1)
                 .add(pairing(&commiter.g, ga) * blind_r1);
 
@@ -153,11 +153,11 @@ impl AccNa {
 
             let mut hasher = Sha3_256::new();
 
-            ///Fiat-Shamir Heuristic
+            //Fiat-Shamir Heuristic
             let hash_data = R1.to_string() + &*R2.to_string() +
                 &*R3.to_string() + &*R4.to_string() +
                 &*commiter.g.to_string() + &*commiter.h.to_string() +
-                &*w1.to_string() + &*w1_r.to_string() + &*w2.to_string() + &*c.to_string();
+                &*w1.to_string() + &*w1_r.to_string() + &*w2.to_string() + &*cr.to_string();
             hasher.update(hash_data);
 
             let result = hasher.finalize();
@@ -170,17 +170,31 @@ impl AccNa {
                        Scalar::from_bytes(result.as_ref()).unwrap());
             }
         };
+        // let inverse = Gt::identity().sub(pairing(v0, g2));
+        // let inverse = pairing(v0, g2).neg();
+        // let minus_one = Scalar::one().neg();
+        //
+        //
+        //
+        // //e(w2,ga)/e(v0,g2)
+        // // e(w2,ga)/e(v,g0) = e(w2,g0)ˆ-r * e(g, g2)ˆdelta * e(g, ga)ˆr1
+        // // w2 = wx * gˆr1
+        // let temp1 = pairing(&G1Affine::from(w2), ga).add(pairing(v0,g2) * minus_one);
+        // let temp2 = (pairing(&G1Affine::from(w2), g2) * x.neg())
+        //     .add(pairing(&commiter.g, g2) * delta1).add(pairing(&commiter.g, ga) * r1);
+        //
+        // assert_eq!(temp1,temp2);
 
         //generate values for proof
-        let s_r1 = blind_r1.add(&(c * r1));
-        let s_r2 = blind_r1.add(&(c * r2));
-        let s_delta1 = blind_r1.add(&(c * delta1));
-        let s_delta2 = blind_r1.add(&(c * delta2));
-        let s_x = blind_r1.add(&(c * x));
-        let s_o_com = blind_r1.add(&(c * o_com));
+        let s_r1 = blind_r1 + c * r1;
+        let s_r2 = blind_r2 + c * r2;
+        let s_delta1 = blind_delta1 + c * delta1;
+        let s_delta2 = blind_delat2 + c * delta2;
+        let s_x = blind_x + c * x;
+        let s_o_com = blind_o_com + c * o_com;
 
         let zkp_proof = ZkpProof{
-            c,
+            cr,
             w1,
             w1_r,
             w2,
@@ -203,12 +217,13 @@ impl AccNa {
     ) -> bool {
         let mut hasher = Sha3_256::new();
 
-        let (w, w1, w1_r, w2, R1, R2, R3, R4,
+        let (cr, w1, w1_r, w2, R1, R2, R3, R4,
             s_r1, s_r2, s_delta1, s_delta2, s_x, s_o_com) = zkp_proof.unpack();
         //compute c
         let hash_data = R1.to_string() + &*R2.to_string() +
             &*R3.to_string() + &*R4.to_string() +
-            &*commiter.g.to_string() + &*commiter.h.to_string();
+            &*commiter.g.to_string() + &*commiter.h.to_string() +
+            &*w1.to_string() + &*w1_r.to_string() + &*w2.to_string() + &*cr.to_string();
         hasher.update(hash_data);
 
         let result = hasher.finalize();
@@ -220,15 +235,20 @@ impl AccNa {
         let R2_prime = (commiter.g * s_delta1).add(&(&commiter.h * s_delta2));
         assert_eq!(R2.add_mixed(&G1Affine::from(w1_r * c)), R2_prime);
 
-        let inverse = Gt::identity().sub(pairing(v0, g2));
-        let R3_prime = (pairing(&G1Affine::from(w2), ga).sub(inverse) * c).add(R3);
-        let R3_p = (pairing(&G1Affine::from(w2), g2) * s_x)
-            .add(pairing(&commiter.g, g2) * s_delta1)
-            .add(pairing(&commiter.g, ga) * s_r1);
+        // let inverse = Gt::identity().sub(pairing(v0, g2));
+        let inverse = pairing(v0, g2) * Scalar::one().neg();
+
+        //e(w2,ga)/e(v0,g2)
+        // let R3_prime = (pairing(&G1Affine::from(w2), ga).add(inverse) * c).add(R3);
+
+        let R3_prime = (pairing(&G1Affine::from(w2), ga).add(inverse) * c).add(R3);
+
+        let R3_p = (pairing(&G1Affine::from(w2), g2) * s_x.neg())
+            .add(pairing(&commiter.g, g2) * s_delta1).add(pairing(&commiter.g, ga) * s_r1);
         assert_eq!(R3_prime, R3_p);
 
         let R4_prime = (commiter.g * s_x).add(&(&commiter.h * s_o_com));
-        assert_eq!(R4.add_mixed(&G1Affine::from(w * c)), R4_prime);
+        assert_eq!(R4.add_mixed(&G1Affine::from(cr * c)), R4_prime);
 
         true
     }
@@ -238,7 +258,7 @@ impl ZkpProof {
     fn unpack(&self) -> (G1Projective, G1Projective, G1Projective, G1Projective,
                          G1Projective, G1Projective, Gt, G1Projective, Scalar,
                          Scalar, Scalar, Scalar, Scalar, Scalar) {
-        (self.w, self.w1, self.w1_r, self.w2, self.R1,
+        (self.cr, self.w1, self.w1_r, self.w2, self.R1,
          self.R2, self.R3, self.R4,
          self.s_r1, self.s_r2, self.s_delta1, self.s_delta2,
          self.s_x, self.s_o_com)
