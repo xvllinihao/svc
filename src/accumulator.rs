@@ -3,7 +3,7 @@ use std::ops::{Add, Neg, Sub};
 use bls12_381::{G1Affine, G1Projective, G2Affine, G2Projective, Gt, pairing, Scalar};
 use rand::prelude::*;
 use sha3::{Digest, Sha3_256};
-use crate::commitment::Commitment;
+use crate::commitment::Commiter;
 
 
 pub fn random_scalar(mut rng: &mut ThreadRng) -> Scalar {
@@ -30,12 +30,46 @@ pub(crate) struct ZkpProof {
     s_o_com:Scalar
 }
 
+impl ZkpProof {
+    pub(crate) fn init(cr:G1Projective,
+                       w1: G1Projective,
+                       w1_r: G1Projective,
+                       w2: G1Projective,
+                       R1:G1Projective,
+                       R2:G1Projective,
+                       R3:Gt,
+                       R4:G1Projective,
+                       s_r1:Scalar,
+                       s_r2:Scalar,
+                       s_delta1:Scalar,
+                       s_delta2:Scalar,
+                       s_x:Scalar,
+                       s_o_com:Scalar) -> ZkpProof {
+        ZkpProof {
+            cr,
+            w1,
+            w1_r,
+            w2,
+            R1,
+            R2,
+            R3,
+            R4,
+            s_r1,
+            s_r2,
+            s_delta1,
+            s_delta2,
+            s_x,
+            s_o_com
+        }
+    }
+}
+
 pub(crate) struct AccNa {
     g1: G1Affine,
-    g2: G2Affine,
+    pub(crate) g2: G2Affine,
     sk: Scalar,
-    v0: G1Affine,
-    ga: G2Affine,
+    pub(crate) v0: G1Affine,
+    pub(crate) ga: G2Affine,
 }
 
 // pub(crate) struct AccA {
@@ -48,7 +82,7 @@ impl AccNa {
     /// wx = g1^(1/(x+a))
     /// v0 = g1^u0
     /// ga = g2^a
-    fn setup() -> Result<AccNa, Error> {
+    pub(crate) fn setup() -> Result<AccNa, Error> {
         let mut rng = thread_rng();
         let g1 = G1Affine::generator();
         let g2 = G2Affine::generator();
@@ -74,7 +108,7 @@ impl AccNa {
         pairing(v0, g2) == pairing(wx, &G2Affine::from(&ga.add(g2 * x)))
     }
 
-    fn add(&self, x: &Scalar) -> G1Affine {
+    pub(crate) fn add(&self, x: &Scalar) -> G1Affine {
         let inverse_xa = x.clone().add(&self.sk).invert().unwrap();
 
         let wx = G1Affine::from(self.v0 * inverse_xa);
@@ -110,8 +144,8 @@ impl AccNa {
     }
 
     /// generate zkp of the membership
-    fn gen_zkp(wx: &G1Affine, x: &Scalar, v0: &G1Affine, g2: &G2Affine, ga: &G2Affine, commiter: &Commitment)
-               -> ZkpProof {
+    pub(crate) fn gen_zkp(wx: &G1Affine, x: &Scalar, v0: &G1Affine, g2: &G2Affine, ga: &G2Affine, commiter: &Commiter)
+                          -> ZkpProof {
         //generate random values
         let mut rng = thread_rng();
         let r1 = random_scalar(&mut rng);
@@ -129,7 +163,7 @@ impl AccNa {
         let w2 = wx.add(&(commiter.g * r1));
 
         //generate blinding values
-        let (blind_r1, blind_r2, R1, blind_delta1, blind_delat2, R2, R3
+        let (blind_r1, blind_r2, R1, blind_delta1, blind_delta2, R2, R3
             , blind_x, blind_o_com, R4, c) = loop
         {
             let blind_r1 = random_scalar(&mut rng);
@@ -170,26 +204,12 @@ impl AccNa {
                        Scalar::from_bytes(result.as_ref()).unwrap());
             }
         };
-        // let inverse = Gt::identity().sub(pairing(v0, g2));
-        // let inverse = pairing(v0, g2).neg();
-        // let minus_one = Scalar::one().neg();
-        //
-        //
-        //
-        // //e(w2,ga)/e(v0,g2)
-        // // e(w2,ga)/e(v,g0) = e(w2,g0)ˆ-r * e(g, g2)ˆdelta * e(g, ga)ˆr1
-        // // w2 = wx * gˆr1
-        // let temp1 = pairing(&G1Affine::from(w2), ga).add(pairing(v0,g2) * minus_one);
-        // let temp2 = (pairing(&G1Affine::from(w2), g2) * x.neg())
-        //     .add(pairing(&commiter.g, g2) * delta1).add(pairing(&commiter.g, ga) * r1);
-        //
-        // assert_eq!(temp1,temp2);
 
         //generate values for proof
         let s_r1 = blind_r1 + c * r1;
         let s_r2 = blind_r2 + c * r2;
         let s_delta1 = blind_delta1 + c * delta1;
-        let s_delta2 = blind_delat2 + c * delta2;
+        let s_delta2 = blind_delta2 + c * delta2;
         let s_x = blind_x + c * x;
         let s_o_com = blind_o_com + c * o_com;
 
@@ -213,7 +233,7 @@ impl AccNa {
     }
 
     pub fn verify_zkp(zkp_proof:&ZkpProof, g2: &G2Affine,
-                      ga: &G2Affine, v0: &G1Affine, commiter:&Commitment
+                      ga: &G2Affine, v0: &G1Affine, commiter:&Commiter
     ) -> bool {
         let mut hasher = Sha3_256::new();
 
@@ -255,9 +275,9 @@ impl AccNa {
 }
 
 impl ZkpProof {
-    fn unpack(&self) -> (G1Projective, G1Projective, G1Projective, G1Projective,
-                         G1Projective, G1Projective, Gt, G1Projective, Scalar,
-                         Scalar, Scalar, Scalar, Scalar, Scalar) {
+    pub(crate) fn unpack(&self) -> (G1Projective, G1Projective, G1Projective, G1Projective,
+                                    G1Projective, G1Projective, Gt, G1Projective, Scalar,
+                                    Scalar, Scalar, Scalar, Scalar, Scalar) {
         (self.cr, self.w1, self.w1_r, self.w2, self.R1,
          self.R2, self.R3, self.R4,
          self.s_r1, self.s_r2, self.s_delta1, self.s_delta2,
@@ -269,7 +289,11 @@ impl ZkpProof {
 mod tests {
     use rand::thread_rng;
     use crate::accumulator::{AccNa, random_scalar};
-    use crate::commitment::Commitment;
+    use crate::commitment::Commiter;
+    use std::collections::BTreeMap;
+    use bls12_381::Scalar;
+    use sha3::{Sha3_256, Digest};
+
 
     #[test]
     fn test_set_up() {
@@ -319,8 +343,9 @@ mod tests {
 
         let acc = AccNa::setup().unwrap();
         let wx = acc.add(&x);
-        let commiter = Commitment::default();
+        let commiter = Commiter::default();
         let zkp = AccNa::gen_zkp(&wx, &x, &acc.v0, &acc.g2, &acc.ga, &commiter);
         assert_eq!(true, AccNa::verify_zkp(&zkp,&acc.g2,&acc.ga,&acc.v0,&commiter))
     }
+
 }
