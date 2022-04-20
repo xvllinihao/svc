@@ -1,0 +1,36 @@
+5 - attributes
+
+The average time of key_gen() is 35.315613ms
+The average time of sign() is 24.937035ms
+The average time of spk_gen() is 129.528131ms
+The average time of spk_verify() is 67.229605ms
+The average time of spk_gen_with_acc() is 463.464229ms
+The average time of spk_verify_with_acc() is 269.335851ms
+
+
+10 attributes
+
+The average time of key_gen() is 71.478032ms
+The average time of sign() is 52.300518ms
+The average time of spk_gen() is 270.624826ms
+The average time of spk_verify() is 106.917232ms
+The average time of spk_gen_with_acc() is 541.71739ms
+The average time of spk_verify_with_acc() is 359.376834ms
+
+15 attributes
+
+The average time of key_gen() is 87.853293ms
+The average time of sign() is 67.187413ms
+The average time of spk_gen() is 385.311966ms
+The average time of spk_verify() is 116.505763ms
+The average time of spk_gen_with_acc() is 572.294871ms
+The average time of spk_verify_with_acc() is 355.125826ms
+
+20 attributes
+
+The average time of key_gen() is 100.951654ms
+The average time of sign() is 82.84919ms
+The average time of spk_gen() is 420.534775ms
+The average time of spk_verify() is 130.025397ms
+The average time of spk_gen_with_acc() is 638.860681ms
+The average time of spk_verify_with_acc() is 348.484288ms
